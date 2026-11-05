@@ -51,11 +51,61 @@ module CodexProfileMeasure
       Sketchup.format_length(value)
     end
 
-    def stock_bar_usage(length)
-      exact = length.to_f / STOCK_BAR_LENGTH
-      consumed = format('%.1f', exact).sub(/\.0$/, '')
-      required = [(exact - 1e-9).ceil, 0].max
-      "#{consumed} / #{required}"
+    def bar_equivalent(length)
+      exact = length.to_f / STOCK_BAR_LENGTH.to_f
+      format('%.2f', exact).sub(/0+$/, '').sub(/\.$/, '')
+    end
+
+    # Best-fit decreasing packs profile lengths into stock bars. Offcuts are
+    # reused only when another complete profile from the same section fits.
+    def bar_cut_plan(lengths)
+      stock = STOCK_BAR_LENGTH.to_f
+      tolerance = 1e-7
+      pieces = []
+      lengths.each do |raw_length|
+        length = raw_length.to_f
+        next unless length.positive?
+
+        full_bars = (length / stock).floor
+        full_bars.times { pieces << stock }
+        remainder = length - (full_bars * stock)
+        pieces << remainder if remainder > tolerance
+      end
+
+      bins = []
+      pieces.sort.reverse_each do |piece|
+        best_index = nil
+        best_remainder = nil
+        bins.each_with_index do |remaining, index|
+          after_cut = remaining - piece
+          next if after_cut < -tolerance
+          next if best_remainder && after_cut >= best_remainder
+
+          best_index = index
+          best_remainder = after_cut
+        end
+
+        if best_index
+          bins[best_index] -= piece
+        else
+          bins << (stock - piece)
+        end
+      end
+
+      { bars: bins.length, waste: [bins.sum, 0.0].max }
+    end
+
+    def category_bar_metrics(group_rows)
+      lengths = group_rows.map { |row| row[:length] }
+      total = lengths.sum(&:to_f)
+      equivalent = total / STOCK_BAR_LENGTH.to_f
+      plan = bar_cut_plan(lengths)
+      {
+        equivalent: bar_equivalent(total),
+        simple_bars: [(equivalent - 1e-9).ceil, 0].max,
+        cut_bars: plan[:bars],
+        waste: formatted(plan[:waste])
+      }
     end
 
     def visible_children(entity)
@@ -140,13 +190,17 @@ module CodexProfileMeasure
       category_rows = groups.map do |key, group_rows|
         sample = group_rows.first
         sum = group_rows.sum { |row| row[:length] }
+        bar_metrics = category_bar_metrics(group_rows)
         color = color_hex(colors.fetch(key))
         <<~HTML
           <tr>
             <td><span class="swatch" style="--swatch:#{color}"></span>#{esc(sample[:category_label])}</td>
             <td>#{group_rows.length}</td>
             <td>#{esc(formatted(sum))}</td>
-            <td>#{esc(stock_bar_usage(sum))}</td>
+            <td>#{esc(bar_metrics[:equivalent])}</td>
+            <td>#{bar_metrics[:simple_bars]}</td>
+            <td>#{bar_metrics[:cut_bars]}</td>
+            <td>#{esc(bar_metrics[:waste])}</td>
           </tr>
         HTML
       end.join
@@ -175,11 +229,15 @@ module CodexProfileMeasure
         total_length: formatted(total_length),
         categories: groups.map do |key, group_rows|
           sample = group_rows.first
+          bar_metrics = category_bar_metrics(group_rows)
           {
             label: sample[:category_label],
             count: group_rows.length,
             total_length: formatted(group_rows.sum { |row| row[:length] }),
-            stock_bars: stock_bar_usage(group_rows.sum { |row| row[:length] }),
+            stock_equivalent: bar_metrics[:equivalent],
+            simple_bars: bar_metrics[:simple_bars],
+            cut_bars: bar_metrics[:cut_bars],
+            waste: bar_metrics[:waste],
             color: color_hex(colors.fetch(key))
           }
         end,
@@ -223,7 +281,7 @@ module CodexProfileMeasure
             section { background:var(--paper); border:1px solid var(--line); border-radius:10px; margin:12px 0; overflow:hidden; }
             h2 { margin:0; padding:11px 14px; font-size:15px; border-bottom:1px solid var(--line); }
             .table-wrap { overflow:auto; max-height:390px; }
-            table { width:100%; border-collapse:collapse; min-width:720px; }
+            table { width:100%; border-collapse:collapse; min-width:900px; }
             th,td { padding:8px 10px; text-align:right; border-bottom:1px solid #edf1f5; white-space:nowrap; }
             th { position:sticky; top:0; background:#f8fafc; color:#4b5d74; font-weight:600; z-index:1; }
             tbody tr:hover { background:#f7faff; }
@@ -268,8 +326,8 @@ module CodexProfileMeasure
             </div>
             <section>
               <h2>جمع بر اساس مقطع عرض × ارتفاع</h2>
-              <div class="table-wrap"><table><thead><tr><th>مقطع</th><th>تعداد پروفیل</th><th>جمع طول</th><th>شاخهٔ ۶ متری (مصرف / خرید)</th></tr></thead>
-                <tbody>#{category_rows.empty? ? '<tr><td colspan="4">پروفیلی پیدا نشد.</td></tr>' : category_rows}</tbody>
+              <div class="table-wrap"><table><thead><tr><th>مقطع</th><th>تعداد پروفیل</th><th>جمع طول</th><th>معادل شاخه</th><th>شاخه با تقسیم جمع</th><th>شاخه با الگوی برش</th><th>پرت برآوردی</th></tr></thead>
+                <tbody>#{category_rows.empty? ? '<tr><td colspan="7">پروفیلی پیدا نشد.</td></tr>' : category_rows}</tbody>
               </table></div>
             </section>
             <section>
@@ -278,7 +336,7 @@ module CodexProfileMeasure
               <div class="table-wrap"><table><thead><tr><th>نام / مسیر</th><th>نوع</th><th>طول</th><th>عرض</th><th>ارتفاع</th><th>دستهٔ مقطع</th></tr></thead>
                 <tbody id="objects">#{object_rows.empty? ? '<tr><td colspan="6">در مدل شیء گروهی یا کامپوننتی پیدا نشد.</td></tr>' : object_rows}</tbody>
               </table></div>
-              <div class="note">در ستون شاخهٔ ۶ متری، عدد اول معادل مصرف شاخه بر پایهٔ جمع طول است و عدد دوم تعداد شاخهٔ کامل موردنیاز با گردکردن رو به بالا. مجموع فقط از پروفیل‌های نهایی محاسبه می‌شود؛ مجموعه‌های والد برای جلوگیری از دوباره‌شماری در فهرست هستند ولی وارد جمع نمی‌شوند.</div>
+              <div class="note">«شاخه با تقسیم جمع» فقط جمع طول را بر ۶ متر تقسیم و رو به بالا گرد می‌کند و فرض می‌کند همهٔ پرت‌ها قابل استفاده‌اند. «شاخه با الگوی برش» طول هر عضو را در شاخه‌های ۶ متری می‌چیند و فقط ته‌مانده‌ای را استفاده می‌کند که قطعهٔ کامل دیگری از همان مقطع در آن جا شود؛ پرت برآوردی باقیمانده را نشان می‌دهد. برش اره و تلرانس برش در این برآورد لحاظ نشده‌اند. مجموع فقط از پروفیل‌های نهایی محاسبه می‌شود؛ مجموعه‌های والد برای جلوگیری از دوباره‌شماری وارد جمع نمی‌شوند.</div>
             </section>
           </main>
           <script>
@@ -329,7 +387,10 @@ module CodexProfileMeasure
                 drawText(item.label, W - margin - 34, y + 27, 17, '400', '#172b4d', 430);
                 drawText(item.count, W - margin - 590, y + 27, 17, '400', '#172b4d', 120);
                 drawText(item.total_length, W - margin - 900, y + 27, 17, '600', '#172b4d', 220);
-                drawText(item.stock_bars, margin + 290, y + 27, 17, '600', '#172b4d', 240);
+                drawText(item.stock_equivalent, margin + 455, y + 27, 17, '600', '#172b4d', 150);
+                drawText(item.simple_bars, margin + 290, y + 27, 17, '600', '#172b4d', 130);
+                drawText(item.cut_bars, margin + 165, y + 27, 17, '600', '#172b4d', 100);
+                drawText(item.waste, margin + 50, y + 27, 17, '600', '#172b4d', 100);
                 ctx.strokeStyle = '#e6ebf1'; ctx.beginPath(); ctx.moveTo(margin, y + rowH); ctx.lineTo(W - margin, y + rowH); ctx.stroke(); y += rowH;
               }
               function categoryHeader() {
@@ -337,7 +398,10 @@ module CodexProfileMeasure
                 drawText('مقطع', W - margin - 10, y + 28, 16, '700', '#4b5d74', 430);
                 drawText('تعداد پروفیل', W - margin - 590, y + 28, 16, '700', '#4b5d74', 150);
                 drawText('جمع طول', W - margin - 900, y + 28, 16, '700', '#4b5d74', 200);
-                drawText('شاخهٔ ۶ متری (مصرف / خرید)', margin + 290, y + 28, 16, '700', '#4b5d74', 270);
+                drawText('معادل شاخه', margin + 455, y + 28, 16, '700', '#4b5d74', 150);
+                drawText('شاخه با جمع', margin + 290, y + 28, 16, '700', '#4b5d74', 130);
+                drawText('الگوی برش', margin + 165, y + 28, 16, '700', '#4b5d74', 100);
+                drawText('پرت', margin + 50, y + 28, 16, '700', '#4b5d74', 100);
                 y += 42;
               }
               function tableHeader() {
@@ -363,7 +427,7 @@ module CodexProfileMeasure
                 ctx.strokeStyle = '#e6ebf1'; ctx.beginPath(); ctx.moveTo(margin, y + rowH); ctx.lineTo(W - margin, y + rowH); ctx.stroke(); y += rowH;
               }
               newPage(true);
-              heading('جمع بر اساس مقطع؛ شاخهٔ ۶ متری (مصرف / خرید)');
+              heading('جمع بر اساس مقطع؛ برآورد شاخه و پرت برای شاخهٔ ۶ متری');
               categoryHeader();
               reportPdfData.categories.forEach(function(item, index) {
                 if (y + rowH > bottom) { newPage(false); heading('ادامهٔ دسته‌بندی مقاطع'); categoryHeader(); }
@@ -580,3 +644,4 @@ module CodexProfileMeasure
     end
   end
 end
+

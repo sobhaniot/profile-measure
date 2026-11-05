@@ -1,6 +1,6 @@
 # Profile Measure for SketchUp
 
-A free SketchUp extension for measuring grouped profiles and creating a cut-list style report. List each group or component with its length, width and height, group profiles by cross-section, calculate total profile length and estimate 6 m stock-bar consumption by section.
+A free SketchUp extension for measuring grouped profiles and creating a cut-list style report. List each group or component with its length, width and height, group profiles by cross-section, calculate total profile length and estimate both combined-length stock-bar counts and cut-aware 6 m bar layouts with leftover waste by section.
 
 **Persian:** [راهنمای فارسی](README-fa.md)
 
@@ -10,7 +10,7 @@ A free SketchUp extension for measuring grouped profiles and creating a cut-list
 
 Install the latest release directly in SketchUp:
 
-- [Download ProfileMeasure-0.1.4.rbz](releases/ProfileMeasure-0.1.4.rbz)
+- [Download ProfileMeasure-0.1.5.rbz](releases/ProfileMeasure-0.1.5.rbz)
 - [View a sample PDF report](docs/sample-profile-report-fa.pdf)
 
 In SketchUp, open **Extension Manager → Install Extension** and select the downloaded RBZ file.
@@ -20,13 +20,13 @@ In SketchUp, open **Extension Manager → Install Extension** and select the dow
 - Report dimensions for visible SketchUp groups and components.
 - Show length, width, height, object name and hierarchy path.
 - Group profiles by cross-section (width × height) and show each section's item count and total length.
-- Estimate 6 m stock-bar usage for every section: decimal consumption followed by the whole bar count rounded up, for example **6.5 / 7**.
+- Show the theoretical 6 m bar count from total length and a cut-aware bar estimate that packs complete profile lengths; report unusable leftover waste.
 - Color-code section groups in the model.
 - Save a paginated PDF report directly from the extension; printing is available separately.
 - Add dimension labels to selected profiles and calculate the total length of the selection.
 - Use the extension from the Extensions menu, toolbar icon, or context menu.
 
-The report includes visible groups and components in the model. Parent assemblies appear in the object list; only leaf profiles are counted in section totals to avoid double counting. Bar estimates are based on the combined length of each section divided by 6 m.
+The report includes visible groups and components in the model. Parent assemblies appear in the object list; only leaf profiles are counted in section totals to avoid double counting. The simple estimate divides each section's combined length by 6 m. The cut-aware estimate packs member lengths from largest to smallest within 6 m stock bars, reusing a remnant only when another complete member of the same section fits. Saw kerf and cutting tolerance are not included.
 
 ## Measurement notes
 

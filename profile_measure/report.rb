@@ -104,7 +104,8 @@ module CodexProfileMeasure
         equivalent: bar_equivalent(total),
         simple_bars: [(equivalent - 1e-9).ceil, 0].max,
         cut_bars: plan[:bars],
-        waste: formatted(plan[:waste])
+        waste: formatted(plan[:waste]),
+        equivalent_and_simple: "#{bar_equivalent(total)} / #{[(equivalent - 1e-9).ceil, 0].max}"
       }
     end
 
@@ -194,13 +195,12 @@ module CodexProfileMeasure
         color = color_hex(colors.fetch(key))
         <<~HTML
           <tr>
-            <td><span class="swatch" style="--swatch:#{color}"></span>#{esc(sample[:category_label])}</td>
+            <td><span class="swatch" style="--swatch:#{color}"></span><bdi dir="ltr">#{esc(sample[:category_label])}</bdi></td>
             <td>#{group_rows.length}</td>
-            <td>#{esc(formatted(sum))}</td>
-            <td>#{esc(bar_metrics[:equivalent])}</td>
-            <td>#{bar_metrics[:simple_bars]}</td>
+            <td><bdi dir="ltr">#{esc(formatted(sum))}</bdi></td>
+            <td><bdi dir="ltr">#{esc(bar_metrics[:equivalent_and_simple])}</bdi></td>
             <td>#{bar_metrics[:cut_bars]}</td>
-            <td>#{esc(bar_metrics[:waste])}</td>
+            <td><bdi dir="ltr">#{esc(bar_metrics[:waste])}</bdi></td>
           </tr>
         HTML
       end.join
@@ -213,10 +213,10 @@ module CodexProfileMeasure
           <tr class="object-row" data-search="#{esc(search_text)}">
             <td><span class="swatch" style="--swatch:#{color}"></span>#{esc(row[:path])}</td>
             <td>#{esc(kind)}</td>
-            <td>#{esc(formatted(row[:length]))}</td>
-            <td>#{esc(formatted(row[:width]))}</td>
-            <td>#{esc(formatted(row[:height]))}</td>
-            <td>#{esc(row[:assembly] ? '—' : row[:category_label])}</td>
+            <td><bdi dir="ltr">#{esc(formatted(row[:length]))}</bdi></td>
+            <td><bdi dir="ltr">#{esc(formatted(row[:width]))}</bdi></td>
+            <td><bdi dir="ltr">#{esc(formatted(row[:height]))}</bdi></td>
+            <td><bdi dir="ltr">#{esc(row[:assembly] ? '—' : row[:category_label])}</bdi></td>
           </tr>
         HTML
       end.join
@@ -235,7 +235,7 @@ module CodexProfileMeasure
             count: group_rows.length,
             total_length: formatted(group_rows.sum { |row| row[:length] }),
             stock_equivalent: bar_metrics[:equivalent],
-            simple_bars: bar_metrics[:simple_bars],
+            equivalent_and_simple: bar_metrics[:equivalent_and_simple],
             cut_bars: bar_metrics[:cut_bars],
             waste: bar_metrics[:waste],
             color: color_hex(colors.fetch(key))
@@ -281,7 +281,11 @@ module CodexProfileMeasure
             section { background:var(--paper); border:1px solid var(--line); border-radius:10px; margin:12px 0; overflow:hidden; }
             h2 { margin:0; padding:11px 14px; font-size:15px; border-bottom:1px solid var(--line); }
             .table-wrap { overflow:auto; max-height:390px; }
-            table { width:100%; border-collapse:collapse; min-width:900px; }
+            table { width:100%; border-collapse:collapse; min-width:720px; }
+            table.category-table { min-width:920px; table-layout:fixed; }
+            .category-table th,.category-table td { padding:12px 10px; font-size:15px; }
+            .category-table td { font-size:17px; font-weight:600; }
+            .category-table th { font-size:14px; }
             th,td { padding:8px 10px; text-align:right; border-bottom:1px solid #edf1f5; white-space:nowrap; }
             th { position:sticky; top:0; background:#f8fafc; color:#4b5d74; font-weight:600; z-index:1; }
             tbody tr:hover { background:#f7faff; }
@@ -326,8 +330,8 @@ module CodexProfileMeasure
             </div>
             <section>
               <h2>جمع بر اساس مقطع عرض × ارتفاع</h2>
-              <div class="table-wrap"><table><thead><tr><th>مقطع</th><th>تعداد پروفیل</th><th>جمع طول</th><th>معادل شاخه</th><th>شاخه با تقسیم جمع</th><th>شاخه با الگوی برش</th><th>پرت برآوردی</th></tr></thead>
-                <tbody>#{category_rows.empty? ? '<tr><td colspan="7">پروفیلی پیدا نشد.</td></tr>' : category_rows}</tbody>
+              <div class="table-wrap"><table class="category-table"><colgroup><col style="width:24%"><col style="width:12%"><col style="width:16%"><col style="width:18%"><col style="width:14%"><col style="width:16%"></colgroup><thead><tr><th>مقطع</th><th>تعداد پروفیل</th><th>جمع طول</th><th>معادل / شاخهٔ نظری</th><th>شاخه با الگوی برش</th><th>پرت برآوردی</th></tr></thead>
+                <tbody>#{category_rows.empty? ? '<tr><td colspan="6">پروفیلی پیدا نشد.</td></tr>' : category_rows}</tbody>
               </table></div>
             </section>
             <section>
@@ -349,12 +353,12 @@ module CodexProfileMeasure
             });
             window.profileMeasureStatus = function(text) { document.getElementById('status').textContent = text; };
             window.createPdfPages = function() {
-              const W = #{PDF_PAGE_WIDTH}, H = #{PDF_PAGE_HEIGHT}, margin = 58, bottom = H - 72, rowH = 40;
+              const W = #{PDF_PAGE_WIDTH}, H = #{PDF_PAGE_HEIGHT}, margin = 58, bottom = H - 72, rowH = 48;
               const pages = [];
               let canvas, ctx, y;
-              function drawText(value, x, baseline, size, weight, color, maxWidth) {
+              function drawText(value, x, baseline, size, weight, color, maxWidth, direction) {
                 ctx.font = weight + ' ' + size + 'px Tahoma, Arial, sans-serif';
-                ctx.fillStyle = color || '#172b4d'; ctx.direction = 'rtl'; ctx.textAlign = 'right';
+                ctx.fillStyle = color || '#172b4d'; ctx.direction = direction || 'rtl'; ctx.textAlign = 'right';
                 ctx.fillText(String(value == null ? '' : value), x, baseline, maxWidth || W);
               }
               function newPage(first) {
@@ -384,24 +388,22 @@ module CodexProfileMeasure
               function categoryRow(item, index) {
                 if (index % 2) { ctx.fillStyle = '#f8fafc'; ctx.fillRect(margin, y, W - margin * 2, rowH); }
                 ctx.fillStyle = item.color; ctx.fillRect(W - margin - 23, y + 13, 14, 14);
-                drawText(item.label, W - margin - 34, y + 27, 17, '400', '#172b4d', 430);
-                drawText(item.count, W - margin - 590, y + 27, 17, '400', '#172b4d', 120);
-                drawText(item.total_length, W - margin - 900, y + 27, 17, '600', '#172b4d', 220);
-                drawText(item.stock_equivalent, margin + 455, y + 27, 17, '600', '#172b4d', 150);
-                drawText(item.simple_bars, margin + 290, y + 27, 17, '600', '#172b4d', 130);
-                drawText(item.cut_bars, margin + 165, y + 27, 17, '600', '#172b4d', 100);
-                drawText(item.waste, margin + 50, y + 27, 17, '600', '#172b4d', 100);
+                drawText(item.label, W - margin - 34, y + 32, 19, '500', '#172b4d', 390, 'ltr');
+                drawText(item.count, W - margin - 500, y + 32, 18, '600', '#172b4d', 110);
+                drawText(item.total_length, W - margin - 745, y + 32, 18, '600', '#172b4d', 190, 'ltr');
+                drawText(item.equivalent_and_simple, W - margin - 1000, y + 32, 18, '700', '#172b4d', 200, 'ltr');
+                drawText(item.cut_bars, W - margin - 1260, y + 32, 18, '700', '#172b4d', 130);
+                drawText(item.waste, margin + 160, y + 32, 18, '600', '#172b4d', 130, 'ltr');
                 ctx.strokeStyle = '#e6ebf1'; ctx.beginPath(); ctx.moveTo(margin, y + rowH); ctx.lineTo(W - margin, y + rowH); ctx.stroke(); y += rowH;
               }
               function categoryHeader() {
                 ctx.fillStyle = '#f0f4f8'; ctx.fillRect(margin, y, W - margin * 2, 42);
-                drawText('مقطع', W - margin - 10, y + 28, 16, '700', '#4b5d74', 430);
-                drawText('تعداد پروفیل', W - margin - 590, y + 28, 16, '700', '#4b5d74', 150);
-                drawText('جمع طول', W - margin - 900, y + 28, 16, '700', '#4b5d74', 200);
-                drawText('معادل شاخه', margin + 455, y + 28, 16, '700', '#4b5d74', 150);
-                drawText('شاخه با جمع', margin + 290, y + 28, 16, '700', '#4b5d74', 130);
-                drawText('الگوی برش', margin + 165, y + 28, 16, '700', '#4b5d74', 100);
-                drawText('پرت', margin + 50, y + 28, 16, '700', '#4b5d74', 100);
+                drawText('مقطع', W - margin - 10, y + 29, 17, '700', '#4b5d74', 390);
+                drawText('تعداد پروفیل', W - margin - 500, y + 29, 17, '700', '#4b5d74', 110);
+                drawText('جمع طول', W - margin - 745, y + 29, 17, '700', '#4b5d74', 190);
+                drawText('معادل / شاخهٔ نظری', W - margin - 1000, y + 29, 17, '700', '#4b5d74', 200);
+                drawText('شاخه با الگوی برش', W - margin - 1260, y + 29, 17, '700', '#4b5d74', 130);
+                drawText('پرت برآوردی', margin + 160, y + 29, 17, '700', '#4b5d74', 130);
                 y += 42;
               }
               function tableHeader() {

@@ -18,7 +18,7 @@
 
 با افزونهٔ **Profile Measure** ابعاد گروه‌ها و کامپوننت‌های مدل اسکچاپ را در یک گزارش مرتب ببینید. این ابزار برای برآورد و فهرست‌کردن پروفیل‌های سازه طراحی شده است: طول، عرض و ارتفاع هر شیء را نمایش می‌دهد، پروفیل‌ها را بر اساس ابعاد مقطع دسته‌بندی می‌کند، جمع طول هر دسته را محاسبه می‌کند و تعداد شاخهٔ ۶ متری را هم بر اساس تقسیم جمع طول و هم بر اساس الگوی چیدمان قطعه‌ها همراه با پرت برآورد می‌کند.
 
-[دانلود رایگان Profile Measure نسخهٔ 0.1.5](https://github.com/sobhaniot/profile-measure/blob/main/releases/ProfileMeasure-0.1.5.rbz?raw=1)
+[دانلود رایگان Profile Measure نسخهٔ 0.1.6](https://github.com/sobhaniot/profile-measure/blob/main/releases/ProfileMeasure-0.1.6.rbz?raw=1)
 
 **[مشاهدهٔ نمونه گزارش PDF](https://github.com/sobhaniot/profile-measure/blob/main/docs/sample-profile-report-fa.pdf)** · **[مشاهدهٔ تصویر نمونه در اسکچاپ](https://github.com/sobhaniot/profile-measure/blob/main/docs/profile-measure-demo.png)**
 
@@ -38,7 +38,7 @@
 | مشخصه | مقدار |
 | --- | --- |
 | نام افزونه | Profile Measure |
-| نسخه | 0.1.5 |
+| نسخه | 0.1.6 |
 | نرم‌افزار | SketchUp دسکتاپ |
 | نوع فایل نصب | RBZ |
 | زبان گزارش | فارسی |
@@ -51,7 +51,7 @@
 
 1. فایل RBZ را از لینک دانلود دریافت کنید.
 2. در SketchUp وارد **Extension Manager → Install Extension** شوید.
-3. فایل `ProfileMeasure-0.1.5.rbz` را انتخاب کنید.
+3. فایل `ProfileMeasure-0.1.6.rbz` را انتخاب کنید.
 4. برای تهیهٔ گزارش، از **Extensions → Profile Measure → گزارش کامل ابعاد پروفیل‌ها** استفاده کنید.
 
 برای گزارش همهٔ اجزا، هر پروفیل را به صورت Group یا Component مدل کنید. در پنجرهٔ گزارش، دکمهٔ **ذخیره PDF** مسیر و نام فایل را می‌پرسد و گزارش را در همان مسیر ذخیره می‌کند. دکمهٔ **چاپ** نیز جداگانه پنجرهٔ چاپ را باز می‌کند.

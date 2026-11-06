@@ -11,10 +11,13 @@ module CodexProfileMeasure
     DICTIONARY = 'CodexProfileMeasure'.freeze
     COLORIZED_KEY = 'report_colorized'.freeze
     COLOR_VISIBLE_KEY = 'report_color_visible'.freeze
+    CATEGORY_HIDDEN_KEY = 'report_category_hidden'.freeze
     PREVIOUS_MATERIAL_KEY = 'report_previous_material'.freeze
     CATEGORY_KEY = 'report_category'.freeze
-    PDF_PAGE_WIDTH = 1684
-    PDF_PAGE_HEIGHT = 1191
+    PDF_PAGE_WIDTH = 3368
+    PDF_PAGE_HEIGHT = 2382
+    PDF_LOGICAL_WIDTH = 1684
+    PDF_LOGICAL_HEIGHT = 1191
     STOCK_BAR_LENGTH = 6.m
 
     PALETTE = [
@@ -28,7 +31,9 @@ module CodexProfileMeasure
     end
 
     def visible?(entity)
-      entity.visible? && entity.layer.visible?
+      entity.layer.visible? && (
+        entity.visible? || entity.get_attribute(DICTIONARY, CATEGORY_HIDDEN_KEY, false)
+      )
     rescue StandardError
       false
     end
@@ -185,6 +190,7 @@ module CodexProfileMeasure
       total_length = profile_rows.sum { |row| row[:length] }
       colors = category_colors(rows)
       groups = grouped_profiles(rows)
+      longest_profile = profile_rows.map { |row| row[:length].to_f }.max.to_f
       title = model.title.to_s.strip
       title = 'گزارش ابعاد پروفیل‌ها' if title.empty?
       generated_at = Time.now.strftime('%Y-%m-%d %H:%M')
@@ -194,13 +200,11 @@ module CodexProfileMeasure
         sum = group_rows.sum { |row| row[:length] }
         bar_metrics = category_bar_metrics(group_rows)
         color = color_hex(colors.fetch(key))
-        color_visible = group_rows.all? do |row|
-          entity = row[:entity]
-          entity.get_attribute(DICTIONARY, COLORIZED_KEY, false) &&
-            entity.get_attribute(DICTIONARY, COLOR_VISIBLE_KEY, true)
+        category_visible = group_rows.all? do |row|
+          !row[:entity].get_attribute(DICTIONARY, CATEGORY_HIDDEN_KEY, false)
         end
-        eye_icon = color_visible ? 'M12 5c-5 0-9 7-9 7s4 7 9 7 9-7 9-7-4-7-9-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4z' : 'M3 12s4-7 9-7c1.6 0 3 .6 4.3 1.4L4 19.7C3.4 19 3 12 3 12zm18 0s-4 7-9 7c-1.6 0-3-.6-4.3-1.4L20 5.3c.6.7 1 6.7 1 6.7z'
-        eye_title = color_visible ? 'خاموش کردن رنگ این مقطع' : 'روشن کردن رنگ این مقطع'
+        eye_icon = category_visible ? 'M12 5c-5 0-9 7-9 7s4 7 9 7 9-7 9-7-4-7-9-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4z' : 'M3 12s4-7 9-7c1.6 0 3 .6 4.3 1.4L4 19.7C3.4 19 3 12 3 12zm18 0s-4 7-9 7c-1.6 0-3-.6-4.3-1.4L20 5.3c.6.7 1 6.7 1 6.7z'
+        eye_title = category_visible ? 'مخفی‌کردن پروفیل‌های این مقطع' : 'نمایش پروفیل‌های این مقطع'
         <<~HTML
           <tr>
             <td><span class="swatch" style="--swatch:#{color}"></span><bdi dir="ltr">#{esc(sample[:category_label])}</bdi></td>
@@ -209,7 +213,7 @@ module CodexProfileMeasure
             <td><bdi dir="ltr">#{esc(bar_metrics[:equivalent_and_simple])}</bdi></td>
             <td>#{bar_metrics[:cut_bars]}</td>
             <td><bdi dir="ltr">#{esc(bar_metrics[:waste])}</bdi></td>
-            <td><button type="button" class="visibility-toggle" data-category="#{esc(key)}" aria-pressed="#{color_visible}" aria-label="#{eye_title}" title="#{eye_title}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="#{eye_icon}"/></svg></button></td>
+            <td><button type="button" class="visibility-toggle" data-category="#{esc(key)}" aria-pressed="#{category_visible}" aria-label="#{eye_title}" title="#{eye_title}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="#{eye_icon}"/></svg></button></td>
           </tr>
         HTML
       end.join
@@ -260,7 +264,19 @@ module CodexProfileMeasure
             category: row[:assembly] ? '—' : row[:category_label],
             color: row[:assembly] ? '#8a94a6' : color_hex(colors.fetch(row[:category]))
           }
-        end
+        end,
+        layout_profiles: groups.flat_map do |_key, group_rows|
+          group_rows.sort_by { |row| -row[:length].to_f }.each_with_index.map do |row, index|
+            {
+              number: index + 1,
+              category: row[:category_label],
+              length: formatted(row[:length]),
+              length_value: row[:length].to_f,
+              color: color_hex(colors.fetch(row[:category]))
+            }
+          end
+        end,
+        longest_profile: longest_profile
       }
       pdf_json = JSON.generate(pdf_data).gsub('<', '\\u003c').gsub('>', '\\u003e').gsub('&', '\\u0026')
 
@@ -307,6 +323,22 @@ module CodexProfileMeasure
             .toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); }
             input { width:min(360px,100%); min-height:36px; border:1px solid #c8d3e0; border-radius:8px; padding:7px 10px; font:inherit; }
             .note { padding:10px 14px; color:var(--muted); font-size:12px; }
+            .pdf-options-overlay { position:fixed; inset:0; z-index:20; display:none; place-items:center; padding:18px; background:rgba(15,23,42,.45); }
+            .pdf-options-overlay.open { display:grid; }
+            .pdf-options-dialog { width:min(480px,100%); background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 18px 60px rgba(15,23,42,.25); padding:20px; }
+            .pdf-options-dialog h2 { padding:0 0 10px; border:0; }
+            .pdf-options-dialog p { margin:0 0 12px; color:var(--muted); font-size:13px; }
+            .pdf-choice { display:flex; align-items:center; gap:10px; padding:8px 2px; border-top:1px solid #edf1f5; }
+            .pdf-choice input { width:17px; min-height:17px; margin:0; }
+            .pdf-options-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:15px; }
+            .profile-layout { padding:12px 14px; }
+            .layout-note { color:var(--muted); font-size:12px; margin-bottom:12px; }
+            .layout-group { border:1px solid var(--line); border-radius:8px; margin:10px 0; overflow:hidden; }
+            .layout-group-title { padding:7px 10px; background:#f8fafc; font-weight:700; }
+            .layout-member { display:grid; grid-template-columns:minmax(150px,1fr) minmax(150px,2fr); gap:14px; align-items:center; padding:7px 10px; border-top:1px solid #edf1f5; }
+            .layout-member-label { font-size:12px; direction:rtl; }
+            .layout-track { height:22px; display:flex; align-items:center; direction:ltr; }
+            .layout-bar { min-width:5px; height:14px; border:1px solid var(--bar-color); background:var(--bar-color); opacity:.78; border-radius:3px; }
             #status { color:#16724d; font-size:12px; min-height:20px; }
             @media (max-width:700px) { .wrap{padding:12px}.cards{grid-template-columns:1fr}.actions{width:100%}header{flex-direction:column} }
             @media print {
@@ -322,6 +354,12 @@ module CodexProfileMeasure
               th { position:static; }
               tr { break-inside:avoid; }
               .note { padding:7px 0; }
+              .pdf-options-overlay { display:none !important; }
+              .pdf-section-hidden { display:none !important; }
+              @page { size:A4 landscape; margin:10mm; }
+              .profile-layout { padding:8px; }
+              .layout-member { grid-template-columns:1fr 2fr; padding:5px 7px; }
+              .layout-group { break-inside:avoid; }
             }
           </style>
         </head>
@@ -329,27 +367,40 @@ module CodexProfileMeasure
           <main class="wrap">
             <header>
               <div><h1>#{esc(title)} — فهرست پروفیل‌ها</h1><div class="sub">#{esc(generated_at)}</div></div>
-              <div class="actions">
-                <button onclick="window.print()">چاپ</button>
-                <button class="primary" onclick="sketchup.savePdf()">ذخیره PDF</button>
+          <div class="actions">
+                <button class="primary" onclick="window.openPdfOptions()">چاپ / ذخیره PDF</button>
                 <button onclick="sketchup.colorize()">رنگ‌بندی گروه‌ها در مدل</button>
                 <button onclick="sketchup.restoreColors()">بازگردانی رنگ‌ها</button>
                 <button onclick="sketchup.refresh()">به‌روزرسانی</button>
               </div>
             </header>
-            <div class="cards">
+            <div class="cards" data-pdf-section="summary">
               <div class="card"><span>تعداد کل اشیای فهرست</span><strong>#{rows.length}</strong></div>
               <div class="card"><span>تعداد پروفیل‌های نهایی</span><strong>#{profile_rows.length}</strong></div>
               <div class="card"><span>جمع طول پروفیل‌ها</span><strong>#{esc(formatted(total_length))}</strong></div>
               <div class="card"><span>تعداد دسته‌های مقطع</span><strong>#{groups.length}</strong></div>
             </div>
-            <section>
+            <section data-pdf-section="totals">
               <h2>جمع بر اساس مقطع عرض × ارتفاع</h2>
-              <div class="table-wrap"><table class="category-table"><colgroup><col style="width:22%"><col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:14%"><col style="width:16%"><col style="width:6%"></colgroup><thead><tr><th>مقطع</th><th>تعداد پروفیل</th><th>جمع طول</th><th>معادل / شاخهٔ نظری</th><th>شاخه با الگوی برش</th><th>پرت برآوردی</th><th title="نمایش یا مخفی‌کردن رنگ مقطع">رنگ</th></tr></thead>
+              <div class="table-wrap"><table class="category-table"><colgroup><col style="width:22%"><col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:14%"><col style="width:16%"><col style="width:6%"></colgroup><thead><tr><th>مقطع</th><th>تعداد پروفیل</th><th>جمع طول</th><th>معادل / شاخهٔ نظری</th><th>شاخه با الگوی برش</th><th>پرت برآوردی</th><th title="مخفی یا آشکارکردن پروفیل‌های همین مقطع">نمایش</th></tr></thead>
                 <tbody>#{category_rows.empty? ? '<tr><td colspan="7">پروفیلی پیدا نشد.</td></tr>' : category_rows}</tbody>
               </table></div>
             </section>
-            <section>
+            <section data-pdf-section="layout">
+              <h2>چیدمان طولی پروفیل‌ها کنار هم</h2>
+              <div class="profile-layout">
+                <div class="layout-note">پروفیل‌ها بر اساس مقطع گروه‌بندی و از بلند به کوتاه مرتب شده‌اند. طول‌ها نسبت به بلندترین پروفیل نمایش داده می‌شوند؛ ضخامت نوار برای خوانایی بزرگ‌نمایی شده است. اندازهٔ واقعی هر قطعه کنار آن درج شده.</div>
+                #{groups.empty? ? '<div class="note">پروفیلی برای چیدمان پیدا نشد.</div>' : groups.map { |key, group_rows|
+                  color = color_hex(colors.fetch(key))
+                  member_rows = group_rows.sort_by { |row| -row[:length].to_f }.each_with_index.map { |row, index|
+                    ratio = longest_profile.positive? ? (row[:length].to_f / longest_profile * 100.0) : 0
+                    width = [[ratio, 4.0].max, 100.0].min
+                    %(<div class="layout-member"><div class="layout-member-label"><span class="swatch" style="--swatch:#{color}"></span>#{index + 1}. #{esc(formatted(row[:length]))} <bdi dir="ltr">| #{esc(row[:category_label])}</bdi></div><div class="layout-track"><div class="layout-bar" style="width:#{format('%.2f', width)}%;--bar-color:#{color}" title="#{esc(formatted(row[:length]))}"></div></div></div>)
+                  }.join
+                  %(<div class="layout-group"><div class="layout-group-title"><bdi dir="ltr">#{esc(group_rows.first[:category_label])}</bdi> — #{group_rows.length} پروفیل</div>#{member_rows}</div>)
+                }.join}</div>
+            </section>
+            <section data-pdf-section="objects">
               <h2>فهرست اشیای مدل</h2>
               <div class="toolbar"><input id="filter" type="search" placeholder="جست‌وجو در نام یا مقطع…" aria-label="جست‌وجو"><span id="status"></span></div>
               <div class="table-wrap"><table><thead><tr><th>نام / مسیر</th><th>نوع</th><th>طول</th><th>عرض</th><th>ارتفاع</th><th>دستهٔ مقطع</th></tr></thead>
@@ -357,6 +408,17 @@ module CodexProfileMeasure
               </table></div>
               <div class="note">«شاخه با تقسیم جمع» فقط جمع طول را بر ۶ متر تقسیم و رو به بالا گرد می‌کند و فرض می‌کند همهٔ پرت‌ها قابل استفاده‌اند. «شاخه با الگوی برش» طول هر عضو را در شاخه‌های ۶ متری می‌چیند و فقط ته‌مانده‌ای را استفاده می‌کند که قطعهٔ کامل دیگری از همان مقطع در آن جا شود؛ پرت برآوردی باقیمانده را نشان می‌دهد. برش اره و تلرانس برش در این برآورد لحاظ نشده‌اند. مجموع فقط از پروفیل‌های نهایی محاسبه می‌شود؛ مجموعه‌های والد برای جلوگیری از دوباره‌شماری وارد جمع نمی‌شوند.</div>
             </section>
+            <div id="pdfOptions" class="pdf-options-overlay" role="dialog" aria-modal="true" aria-labelledby="pdfOptionsTitle">
+              <div class="pdf-options-dialog">
+                <h2 id="pdfOptionsTitle">بخش‌های گزارش را انتخاب کنید</h2>
+                <p>چاپ برداری متن واضح‌تری در بزرگ‌نمایی دارد. ذخیرهٔ مستقیم با وضوح ۲۸۸ DPI ساخته می‌شود.</p>
+                <label class="pdf-choice"><input type="checkbox" name="section" value="summary" checked> خلاصهٔ آمار</label>
+                <label class="pdf-choice"><input type="checkbox" name="section" value="totals" checked> جمع بر اساس مقطع و برآورد شاخه</label>
+                <label class="pdf-choice"><input type="checkbox" name="section" value="layout" checked> چیدمان طولی پروفیل‌ها</label>
+                <label class="pdf-choice"><input type="checkbox" name="section" value="objects" checked> فهرست کامل اشیا</label>
+                <div class="pdf-options-actions"><button type="button" id="cancelPdfOptions">انصراف</button><button type="button" id="choosePdfPrint">چاپ برداری</button><button type="button" class="primary" id="choosePdfSave">ذخیره PDF</button></div>
+              </div>
+            </div>
           </main>
           <script>
             const reportPdfData = #{pdf_json};
@@ -366,25 +428,54 @@ module CodexProfileMeasure
                 row.hidden = query && !row.dataset.search.includes(query);
               });
             });
-            function setCategoryColorVisibility(category, visible) {
+            function setCategoryVisibility(category, visible) {
               const button = Array.from(document.querySelectorAll('.visibility-toggle')).find(function(item) { return item.dataset.category === category; });
               if (!button) return;
               button.setAttribute('aria-pressed', String(visible));
-              button.setAttribute('aria-label', visible ? 'خاموش کردن رنگ این مقطع' : 'روشن کردن رنگ این مقطع');
-              button.title = visible ? 'خاموش کردن رنگ این مقطع' : 'روشن کردن رنگ این مقطع';
+              button.setAttribute('aria-label', visible ? 'مخفی‌کردن پروفیل‌های این مقطع' : 'نمایش پروفیل‌های این مقطع');
+              button.title = visible ? 'مخفی‌کردن پروفیل‌های این مقطع' : 'نمایش پروفیل‌های این مقطع';
               button.innerHTML = visible ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c-5 0-9 7-9 7s4 7 9 7 9-7 9-7-4-7-9-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s4-7 9-7c1.6 0 3 .6 4.3 1.4L4 19.7C3.4 19 3 12 3 12zm18 0s-4 7-9 7c-1.6 0-3-.6-4.3-1.4L20 5.3c.6.7 1 6.7 1 6.7z"/></svg>';
             }
             document.querySelectorAll('.visibility-toggle').forEach(function(button) {
               button.addEventListener('click', function() {
                 const enable = button.getAttribute('aria-pressed') !== 'true';
-                setCategoryColorVisibility(button.dataset.category, enable);
-                sketchup.toggleCategoryColor(button.dataset.category, enable);
+                setCategoryVisibility(button.dataset.category, enable);
+                sketchup.toggleCategoryVisibility(button.dataset.category, enable);
               });
             });
             window.profileMeasureStatus = function(text) { document.getElementById('status').textContent = text; };
-            window.setCategoryColorVisibility = setCategoryColorVisibility;
+            window.setCategoryVisibility = setCategoryVisibility;
+            window.openPdfOptions = function() {
+              document.getElementById('pdfOptions').classList.add('open');
+            };
+            function selectedPdfSections() {
+              return Array.from(document.querySelectorAll('#pdfOptions input[name="section"]:checked')).map(function(input) { return input.value; });
+            }
+            function applyPdfSections(sections) {
+              if (!sections.length) { window.profileMeasureStatus('حداقل یک بخش را برای PDF انتخاب کنید.'); return false; }
+              const selected = new Set(sections);
+              document.querySelectorAll('[data-pdf-section]').forEach(function(section) {
+                section.classList.toggle('pdf-section-hidden', !selected.has(section.dataset.pdfSection));
+              });
+              window.pdfSections = {summary:selected.has('summary'), totals:selected.has('totals'), layout:selected.has('layout'), objects:selected.has('objects')};
+              return true;
+            }
+            document.getElementById('cancelPdfOptions').addEventListener('click', function() { document.getElementById('pdfOptions').classList.remove('open'); });
+            document.getElementById('choosePdfPrint').addEventListener('click', function() {
+              const sections = selectedPdfSections();
+              if (!applyPdfSections(sections)) return;
+              document.getElementById('pdfOptions').classList.remove('open');
+              window.setTimeout(function() { window.print(); }, 120);
+            });
+            document.getElementById('choosePdfSave').addEventListener('click', function() {
+              const sections = selectedPdfSections();
+              if (!applyPdfSections(sections)) return;
+              document.getElementById('pdfOptions').classList.remove('open');
+              sketchup.savePdf(JSON.stringify(sections));
+            });
             window.createPdfPages = function() {
-              const W = #{PDF_PAGE_WIDTH}, H = #{PDF_PAGE_HEIGHT}, margin = 58, bottom = H - 72, rowH = 48;
+              window.pdfSections = window.pdfSections || {summary:true, totals:true, layout:true, objects:true};
+              const W = #{PDF_LOGICAL_WIDTH}, H = #{PDF_LOGICAL_HEIGHT}, scale = #{PDF_PAGE_WIDTH}.0 / W, margin = 58, bottom = H - 72, rowH = 48;
               const pages = [];
               let canvas, ctx, y;
               function drawText(value, x, baseline, size, weight, color, maxWidth, direction) {
@@ -393,13 +484,14 @@ module CodexProfileMeasure
                 ctx.fillText(String(value == null ? '' : value), x, baseline, maxWidth || W);
               }
               function newPage(first) {
-                canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+                canvas = document.createElement('canvas'); canvas.width = #{PDF_PAGE_WIDTH}; canvas.height = #{PDF_PAGE_HEIGHT};
                 pages.push(canvas); ctx = canvas.getContext('2d');
+                ctx.scale(scale, scale);
                 ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
                 drawText(reportPdfData.title + ' — گزارش ابعاد پروفیل‌ها', W - margin, 66, 32, '700');
                 drawText('تاریخ: ' + reportPdfData.generated_at, W - margin, 102, 18, '400', '#64748b');
                 y = 140;
-                if (first) {
+                if (first && window.pdfSections.summary) {
                   const cards = [['تعداد کل اشیا', reportPdfData.object_count], ['پروفیل‌های نهایی', reportPdfData.profile_count], ['جمع طول کل', reportPdfData.total_length], ['دسته‌های مقطع', reportPdfData.categories.length]];
                   const gap = 14, cardW = (W - margin * 2 - gap * 3) / 4, cardH = 86;
                   cards.forEach(function(card, i) {
@@ -459,20 +551,62 @@ module CodexProfileMeasure
                 drawText(row.category, r - 1150, y + 26, 15, '400', '#172b4d', 300);
                 ctx.strokeStyle = '#e6ebf1'; ctx.beginPath(); ctx.moveTo(margin, y + rowH); ctx.lineTo(W - margin, y + rowH); ctx.stroke(); y += rowH;
               }
+              function layoutGroupHeading(item) {
+                ctx.fillStyle = '#f0f4f8'; ctx.fillRect(margin, y, W - margin * 2, 38);
+                ctx.fillStyle = item.color; ctx.fillRect(W - margin - 24, y + 12, 14, 14);
+                drawText(item.category + ' — ' + item.count + ' پروفیل', W - margin - 36, y + 26, 17, '700', '#172b4d', 520, 'rtl');
+                y += 42;
+              }
+              function layoutRow(item, index) {
+                const h = 42;
+                if (index % 2) { ctx.fillStyle = '#fbfcfe'; ctx.fillRect(margin, y, W - margin * 2, h); }
+                const ratio = reportPdfData.longest_profile > 0 ? item.length_value / reportPdfData.longest_profile : 0;
+                const barWidth = Math.max(4, Math.min(740, 740 * ratio));
+                const barX = margin + 22;
+                ctx.fillStyle = item.color; ctx.globalAlpha = 0.8; ctx.fillRect(barX, y + 13, barWidth, 15); ctx.globalAlpha = 1;
+                ctx.strokeStyle = item.color; ctx.lineWidth = 1.5; ctx.strokeRect(barX, y + 13, barWidth, 15);
+                drawText('#' + item.number + '  ' + item.length + '  |  ' + item.category, W - margin - 18, y + 27, 16, '600', '#172b4d', 700, 'rtl');
+                ctx.strokeStyle = '#e6ebf1'; ctx.beginPath(); ctx.moveTo(margin, y + h); ctx.lineTo(W - margin, y + h); ctx.stroke(); y += h;
+              }
               newPage(true);
-              heading('جمع بر اساس مقطع؛ برآورد شاخه و پرت برای شاخهٔ ۶ متری');
-              categoryHeader();
-              reportPdfData.categories.forEach(function(item, index) {
-                if (y + rowH > bottom) { newPage(false); heading('ادامهٔ دسته‌بندی مقاطع'); categoryHeader(); }
-                categoryRow(item, index);
-              });
-              if (y + 90 > bottom) newPage(false);
-              heading('فهرست اشیای مدل'); tableHeader();
-              const rows = reportPdfData.rows.length ? reportPdfData.rows : [{path:'شیء گروهی یا کامپوننتی پیدا نشد',kind:'',length:'',width:'',height:'',category:'',color:'#8a94a6'}];
-              rows.forEach(function(row, index) {
-                if (y + rowH > bottom) { newPage(false); heading('ادامهٔ فهرست اشیا'); tableHeader(); }
-                objectRow(row, index);
-              });
+              if (window.pdfSections.totals) {
+                heading('جمع بر اساس مقطع؛ برآورد شاخه و پرت برای شاخهٔ ۶ متری');
+                categoryHeader();
+                reportPdfData.categories.forEach(function(item, index) {
+                  if (y + rowH > bottom) { newPage(false); heading('ادامهٔ دسته‌بندی مقاطع'); categoryHeader(); }
+                  categoryRow(item, index);
+                });
+              }
+              if (window.pdfSections.objects) {
+                if (y + 90 > bottom) newPage(false);
+                heading('فهرست اشیای مدل'); tableHeader();
+                const rows = reportPdfData.rows.length ? reportPdfData.rows : [{path:'شیء گروهی یا کامپوننتی پیدا نشد',kind:'',length:'',width:'',height:'',category:'',color:'#8a94a6'}];
+                rows.forEach(function(row, index) {
+                  if (y + rowH > bottom) { newPage(false); heading('ادامهٔ فهرست اشیا'); tableHeader(); }
+                  objectRow(row, index);
+                });
+              }
+              if (window.pdfSections.layout) {
+                if (y + 90 > bottom) newPage(false);
+                heading('چیدمان طولی پروفیل‌ها کنار هم');
+                drawText('گروه‌بندی بر اساس مقطع؛ طول نوارها با یک مقیاس مشترک نسبت به بلندترین پروفیل رسم شده است. ضخامت نوار صرفاً نمایشی است.', W - margin, y + 22, 14, '400', '#64748b', W - margin * 2, 'rtl'); y += 36;
+                if (!reportPdfData.layout_profiles.length) {
+                  drawText('پروفیلی برای چیدمان پیدا نشد.', W - margin, y + 24, 16, '400', '#64748b'); y += 42;
+                } else {
+                let previousCategory = null;
+                const layoutCounts = {};
+                reportPdfData.layout_profiles.forEach(function(profile) { layoutCounts[profile.category] = (layoutCounts[profile.category] || 0) + 1; });
+                reportPdfData.layout_profiles.forEach(function(item, index) {
+                  if (item.category !== previousCategory) {
+                    if (y + 84 > bottom) { newPage(false); heading('ادامهٔ چیدمان پروفیل‌ها'); }
+                    layoutGroupHeading({category:item.category, count:layoutCounts[item.category], color:item.color});
+                    previousCategory = item.category;
+                  }
+                  if (y + 42 > bottom) { newPage(false); heading('ادامهٔ چیدمان پروفیل‌ها'); layoutGroupHeading({category:item.category, count:layoutCounts[item.category], color:item.color}); }
+                  layoutRow(item, index);
+                });
+                }
+              }
               pages.forEach(function(item, index) {
                 ctx = item.getContext('2d'); ctx.strokeStyle = '#dce4ee'; ctx.beginPath(); ctx.moveTo(margin, H - 55); ctx.lineTo(W - margin, H - 55); ctx.stroke();
                 drawText('صفحه ' + (index + 1) + ' از ' + pages.length, W - margin, H - 27, 14, '400', '#64748b');
@@ -481,7 +615,8 @@ module CodexProfileMeasure
             };
             window.sendPdfPage = function(index) {
               if (!window.pdfCanvases || !window.pdfCanvases[index]) return;
-              sketchup.pdfPage(window.pdfCanvases[index].toDataURL('image/jpeg', 0.84), index + 1, window.pdfCanvases.length);
+              sketchup.pdfPage(window.pdfCanvases[index].toDataURL('image/jpeg', 0.97), index + 1, window.pdfCanvases.length);
+              window.pdfCanvases[index] = null;
             };
           </script>
         </body>
@@ -512,22 +647,23 @@ module CodexProfileMeasure
           count = restore_colors
           dialog.execute_script("window.profileMeasureStatus(#{JSON.generate("رنگ قبلی #{count} پروفیل بازگردانده شد.")})")
         end
-        @dialog.add_action_callback('toggleCategoryColor') do |_context, category, visible|
+        @dialog.add_action_callback('toggleCategoryVisibility') do |_context, category, visible|
           enabled = visible.to_s == 'true'
           begin
-            count = set_category_color(category.to_s, enabled)
-            status = enabled ? "رنگ مقطع برای #{count} پروفیل روشن شد." : "رنگ مقطع برای #{count} پروفیل خاموش شد؛ خود پروفیل‌ها در مدل باقی هستند."
+            count = set_category_visibility(category.to_s, enabled)
+            status = enabled ? "#{count} پروفیل این مقطع در مدل نمایش داده شد." : "#{count} پروفیل این مقطع در مدل مخفی شد. برای بازگرداندن، دوباره روی چشم بزنید."
             dialog.execute_script("window.profileMeasureStatus(#{JSON.generate(status)})")
           rescue StandardError => error
-            dialog.execute_script("window.setCategoryColorVisibility(#{JSON.generate(category.to_s)}, #{!enabled})")
-            dialog.execute_script("window.profileMeasureStatus(#{JSON.generate("تغییر رنگ انجام نشد: #{error.message}")})")
+            dialog.execute_script("window.setCategoryVisibility(#{JSON.generate(category.to_s)}, #{!enabled})")
+            dialog.execute_script("window.profileMeasureStatus(#{JSON.generate("تغییر نمایش انجام نشد: #{error.message}")})")
           end
         end
         @dialog.add_action_callback('refresh') { |_context| refresh }
-        @dialog.add_action_callback('savePdf') do |_context|
+        @dialog.add_action_callback('savePdf') do |_context, sections_json|
           path = choose_pdf_path(model)
           if path
-            @pdf_export = { path: path, pages: [] }
+            sections = JSON.parse(sections_json.to_s)
+            @pdf_export = { path: path, pages: [], sections: sections }
             dialog.execute_script('window.createPdfPages()')
           end
         end
@@ -651,37 +787,23 @@ module CodexProfileMeasure
       raise
     end
 
-    def set_category_color(category_key, visible)
+    def set_category_visibility(category_key, visible)
       model = Sketchup.active_model
       model_rows = scan_model(model)
       rows = profiles(model_rows).select { |row| row[:category] == category_key }
       return 0 if rows.empty?
 
-      colors = category_colors(model_rows)
       operation_started = false
-      model.start_operation('Profile Measure - toggle section color', true)
+      model.start_operation('Profile Measure - toggle section visibility', true)
       operation_started = true
       rows.each do |row|
         entity = row[:entity]
-        unless entity.get_attribute(DICTIONARY, COLORIZED_KEY, false)
-          previous = entity.material
-          entity.set_attribute(DICTIONARY, PREVIOUS_MATERIAL_KEY, previous ? previous.name : '')
-        end
-
         if visible
-          material_name = "PM Report #{row[:category]}"
-          material = model.materials[material_name] || model.materials.add(material_name)
-          material.color = Sketchup::Color.new(*colors.fetch(row[:category]))
-          entity.material = material
-          entity.set_attribute(DICTIONARY, COLORIZED_KEY, true)
-          entity.set_attribute(DICTIONARY, COLOR_VISIBLE_KEY, true)
-          entity.set_attribute(DICTIONARY, CATEGORY_KEY, row[:category])
+          entity.hidden = false
+          entity.delete_attribute(DICTIONARY, CATEGORY_HIDDEN_KEY)
         else
-          previous_name = entity.get_attribute(DICTIONARY, PREVIOUS_MATERIAL_KEY, '')
-          entity.material = previous_name.empty? ? nil : model.materials[previous_name]
-          entity.set_attribute(DICTIONARY, COLORIZED_KEY, true)
-          entity.set_attribute(DICTIONARY, COLOR_VISIBLE_KEY, false)
-          entity.set_attribute(DICTIONARY, CATEGORY_KEY, row[:category])
+          entity.hidden = true
+          entity.set_attribute(DICTIONARY, CATEGORY_HIDDEN_KEY, true)
         end
       end
       model.commit_operation
@@ -732,4 +854,3 @@ module CodexProfileMeasure
     end
   end
 end
-

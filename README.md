@@ -10,7 +10,7 @@ A free SketchUp extension for measuring grouped profiles and creating a cut-list
 
 Install the latest release directly in SketchUp:
 
-- [Download ProfileMeasure-0.1.6.rbz](releases/ProfileMeasure-0.1.6.rbz)
+- [Download ProfileMeasure-0.1.7.rbz](releases/ProfileMeasure-0.1.7.rbz)
 - [View a sample PDF report](docs/sample-profile-report-fa.pdf)
 
 In SketchUp, open **Extension Manager → Install Extension** and select the downloaded RBZ file.
@@ -21,7 +21,7 @@ In SketchUp, open **Extension Manager → Install Extension** and select the dow
 - Show length, width, height, object name and hierarchy path.
 - Group profiles by cross-section (width × height) and show each section's item count and total length.
 - Show the equivalent stock-bar consumption beside the rounded simple count, a cut-aware bar estimate, and unusable leftover waste for a clearer section summary.
-- Color-code section groups in the model.
+- Color-code section groups in the model and toggle each section color from its row in the report.
 - Save a paginated PDF report directly from the extension; printing is available separately.
 - Add dimension labels to selected profiles and calculate the total length of the selection.
 - Use the extension from the Extensions menu, toolbar icon, or context menu.

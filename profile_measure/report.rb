@@ -10,6 +10,7 @@ module CodexProfileMeasure
 
     DICTIONARY = 'CodexProfileMeasure'.freeze
     COLORIZED_KEY = 'report_colorized'.freeze
+    COLOR_VISIBLE_KEY = 'report_color_visible'.freeze
     PREVIOUS_MATERIAL_KEY = 'report_previous_material'.freeze
     CATEGORY_KEY = 'report_category'.freeze
     PDF_PAGE_WIDTH = 1684
@@ -193,6 +194,13 @@ module CodexProfileMeasure
         sum = group_rows.sum { |row| row[:length] }
         bar_metrics = category_bar_metrics(group_rows)
         color = color_hex(colors.fetch(key))
+        color_visible = group_rows.all? do |row|
+          entity = row[:entity]
+          entity.get_attribute(DICTIONARY, COLORIZED_KEY, false) &&
+            entity.get_attribute(DICTIONARY, COLOR_VISIBLE_KEY, true)
+        end
+        eye_icon = color_visible ? 'M12 5c-5 0-9 7-9 7s4 7 9 7 9-7 9-7-4-7-9-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4z' : 'M3 12s4-7 9-7c1.6 0 3 .6 4.3 1.4L4 19.7C3.4 19 3 12 3 12zm18 0s-4 7-9 7c-1.6 0-3-.6-4.3-1.4L20 5.3c.6.7 1 6.7 1 6.7z'
+        eye_title = color_visible ? 'خاموش کردن رنگ این مقطع' : 'روشن کردن رنگ این مقطع'
         <<~HTML
           <tr>
             <td><span class="swatch" style="--swatch:#{color}"></span><bdi dir="ltr">#{esc(sample[:category_label])}</bdi></td>
@@ -201,6 +209,7 @@ module CodexProfileMeasure
             <td><bdi dir="ltr">#{esc(bar_metrics[:equivalent_and_simple])}</bdi></td>
             <td>#{bar_metrics[:cut_bars]}</td>
             <td><bdi dir="ltr">#{esc(bar_metrics[:waste])}</bdi></td>
+            <td><button type="button" class="visibility-toggle" data-category="#{esc(key)}" aria-pressed="#{color_visible}" aria-label="#{eye_title}" title="#{eye_title}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="#{eye_icon}"/></svg></button></td>
           </tr>
         HTML
       end.join
@@ -282,10 +291,15 @@ module CodexProfileMeasure
             h2 { margin:0; padding:11px 14px; font-size:15px; border-bottom:1px solid var(--line); }
             .table-wrap { overflow:auto; max-height:390px; }
             table { width:100%; border-collapse:collapse; min-width:720px; }
-            table.category-table { min-width:920px; table-layout:fixed; }
+            table.category-table { min-width:1000px; table-layout:fixed; }
             .category-table th,.category-table td { padding:12px 10px; font-size:15px; }
             .category-table td { font-size:17px; font-weight:600; }
             .category-table th { font-size:14px; }
+            .category-table th:last-child,.category-table td:last-child { text-align:center; }
+            .category-table .visibility-toggle { display:inline-grid; place-items:center; width:34px; min-height:34px; padding:5px; border-color:transparent; background:transparent; color:#1769aa; }
+            .category-table .visibility-toggle[aria-pressed="false"] { color:#7b8797; background:#f0f3f6; }
+            .category-table .visibility-toggle svg { width:21px; height:21px; fill:currentColor; }
+            .category-table .visibility-toggle:hover { background:#eaf2fb; }
             th,td { padding:8px 10px; text-align:right; border-bottom:1px solid #edf1f5; white-space:nowrap; }
             th { position:sticky; top:0; background:#f8fafc; color:#4b5d74; font-weight:600; z-index:1; }
             tbody tr:hover { background:#f7faff; }
@@ -300,6 +314,7 @@ module CodexProfileMeasure
               .wrap { max-width:none; padding:0; }
               header { margin-bottom:10px; }
               .actions,.toolbar { display:none !important; }
+              .category-table th:last-child,.category-table td:last-child { display:none; }
               .cards { gap:6px; margin-bottom:8px; }
               .card,section { border-color:#aeb8c5; break-inside:avoid; overflow:visible; }
               .table-wrap { max-height:none; overflow:visible; }
@@ -330,8 +345,8 @@ module CodexProfileMeasure
             </div>
             <section>
               <h2>جمع بر اساس مقطع عرض × ارتفاع</h2>
-              <div class="table-wrap"><table class="category-table"><colgroup><col style="width:24%"><col style="width:12%"><col style="width:16%"><col style="width:18%"><col style="width:14%"><col style="width:16%"></colgroup><thead><tr><th>مقطع</th><th>تعداد پروفیل</th><th>جمع طول</th><th>معادل / شاخهٔ نظری</th><th>شاخه با الگوی برش</th><th>پرت برآوردی</th></tr></thead>
-                <tbody>#{category_rows.empty? ? '<tr><td colspan="6">پروفیلی پیدا نشد.</td></tr>' : category_rows}</tbody>
+              <div class="table-wrap"><table class="category-table"><colgroup><col style="width:22%"><col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:14%"><col style="width:16%"><col style="width:6%"></colgroup><thead><tr><th>مقطع</th><th>تعداد پروفیل</th><th>جمع طول</th><th>معادل / شاخهٔ نظری</th><th>شاخه با الگوی برش</th><th>پرت برآوردی</th><th title="نمایش یا مخفی‌کردن رنگ مقطع">رنگ</th></tr></thead>
+                <tbody>#{category_rows.empty? ? '<tr><td colspan="7">پروفیلی پیدا نشد.</td></tr>' : category_rows}</tbody>
               </table></div>
             </section>
             <section>
@@ -351,7 +366,23 @@ module CodexProfileMeasure
                 row.hidden = query && !row.dataset.search.includes(query);
               });
             });
+            function setCategoryColorVisibility(category, visible) {
+              const button = Array.from(document.querySelectorAll('.visibility-toggle')).find(function(item) { return item.dataset.category === category; });
+              if (!button) return;
+              button.setAttribute('aria-pressed', String(visible));
+              button.setAttribute('aria-label', visible ? 'خاموش کردن رنگ این مقطع' : 'روشن کردن رنگ این مقطع');
+              button.title = visible ? 'خاموش کردن رنگ این مقطع' : 'روشن کردن رنگ این مقطع';
+              button.innerHTML = visible ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c-5 0-9 7-9 7s4 7 9 7 9-7 9-7-4-7-9-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s4-7 9-7c1.6 0 3 .6 4.3 1.4L4 19.7C3.4 19 3 12 3 12zm18 0s-4 7-9 7c-1.6 0-3-.6-4.3-1.4L20 5.3c.6.7 1 6.7 1 6.7z"/></svg>';
+            }
+            document.querySelectorAll('.visibility-toggle').forEach(function(button) {
+              button.addEventListener('click', function() {
+                const enable = button.getAttribute('aria-pressed') !== 'true';
+                setCategoryColorVisibility(button.dataset.category, enable);
+                sketchup.toggleCategoryColor(button.dataset.category, enable);
+              });
+            });
             window.profileMeasureStatus = function(text) { document.getElementById('status').textContent = text; };
+            window.setCategoryColorVisibility = setCategoryColorVisibility;
             window.createPdfPages = function() {
               const W = #{PDF_PAGE_WIDTH}, H = #{PDF_PAGE_HEIGHT}, margin = 58, bottom = H - 72, rowH = 48;
               const pages = [];
@@ -481,6 +512,17 @@ module CodexProfileMeasure
           count = restore_colors
           dialog.execute_script("window.profileMeasureStatus(#{JSON.generate("رنگ قبلی #{count} پروفیل بازگردانده شد.")})")
         end
+        @dialog.add_action_callback('toggleCategoryColor') do |_context, category, visible|
+          enabled = visible.to_s == 'true'
+          begin
+            count = set_category_color(category.to_s, enabled)
+            status = enabled ? "رنگ مقطع برای #{count} پروفیل روشن شد." : "رنگ مقطع برای #{count} پروفیل خاموش شد؛ خود پروفیل‌ها در مدل باقی هستند."
+            dialog.execute_script("window.profileMeasureStatus(#{JSON.generate(status)})")
+          rescue StandardError => error
+            dialog.execute_script("window.setCategoryColorVisibility(#{JSON.generate(category.to_s)}, #{!enabled})")
+            dialog.execute_script("window.profileMeasureStatus(#{JSON.generate("تغییر رنگ انجام نشد: #{error.message}")})")
+          end
+        end
         @dialog.add_action_callback('refresh') { |_context| refresh }
         @dialog.add_action_callback('savePdf') do |_context|
           path = choose_pdf_path(model)
@@ -597,7 +639,50 @@ module CodexProfileMeasure
         material.color = Sketchup::Color.new(*colors.fetch(row[:category]))
         entity.material = material
         entity.set_attribute(DICTIONARY, COLORIZED_KEY, true)
+        entity.set_attribute(DICTIONARY, COLOR_VISIBLE_KEY, true)
         entity.set_attribute(DICTIONARY, CATEGORY_KEY, row[:category])
+      end
+      model.commit_operation
+      operation_started = false
+      model.active_view.invalidate
+      rows.map { |row| row[:entity].persistent_id }.uniq.length
+    rescue StandardError
+      model.abort_operation if operation_started && model
+      raise
+    end
+
+    def set_category_color(category_key, visible)
+      model = Sketchup.active_model
+      model_rows = scan_model(model)
+      rows = profiles(model_rows).select { |row| row[:category] == category_key }
+      return 0 if rows.empty?
+
+      colors = category_colors(model_rows)
+      operation_started = false
+      model.start_operation('Profile Measure - toggle section color', true)
+      operation_started = true
+      rows.each do |row|
+        entity = row[:entity]
+        unless entity.get_attribute(DICTIONARY, COLORIZED_KEY, false)
+          previous = entity.material
+          entity.set_attribute(DICTIONARY, PREVIOUS_MATERIAL_KEY, previous ? previous.name : '')
+        end
+
+        if visible
+          material_name = "PM Report #{row[:category]}"
+          material = model.materials[material_name] || model.materials.add(material_name)
+          material.color = Sketchup::Color.new(*colors.fetch(row[:category]))
+          entity.material = material
+          entity.set_attribute(DICTIONARY, COLORIZED_KEY, true)
+          entity.set_attribute(DICTIONARY, COLOR_VISIBLE_KEY, true)
+          entity.set_attribute(DICTIONARY, CATEGORY_KEY, row[:category])
+        else
+          previous_name = entity.get_attribute(DICTIONARY, PREVIOUS_MATERIAL_KEY, '')
+          entity.material = previous_name.empty? ? nil : model.materials[previous_name]
+          entity.set_attribute(DICTIONARY, COLORIZED_KEY, true)
+          entity.set_attribute(DICTIONARY, COLOR_VISIBLE_KEY, false)
+          entity.set_attribute(DICTIONARY, CATEGORY_KEY, row[:category])
+        end
       end
       model.commit_operation
       operation_started = false
@@ -620,6 +705,7 @@ module CodexProfileMeasure
         previous_name = entity.get_attribute(DICTIONARY, PREVIOUS_MATERIAL_KEY, '')
         entity.material = previous_name.empty? ? nil : model.materials[previous_name]
         entity.delete_attribute(DICTIONARY, COLORIZED_KEY)
+        entity.delete_attribute(DICTIONARY, COLOR_VISIBLE_KEY)
         entity.delete_attribute(DICTIONARY, PREVIOUS_MATERIAL_KEY)
         entity.delete_attribute(DICTIONARY, CATEGORY_KEY)
       end
